@@ -17,10 +17,11 @@ class BurpExtender : IBurpExtender, IScannerCheck {
     override fun doActiveScan(baseRequestResponse: IHttpRequestResponse, insertionPoint: IScannerInsertionPoint): MutableList<IScanIssue> {
         // Fetch insertion points previously used for this base request
         val key = ByteBuffer.wrap(baseRequestResponse.request)
-        if(!insertionPointStore.containsKey(key)) {
-            insertionPointStore.put(key, arrayListOf<InsertionPoint>())
+        var insertionPoints = insertionPointStore.get(key)
+        if(insertionPoints == null) {
+            insertionPoints = arrayListOf<InsertionPoint>()
+            insertionPointStore.put(key, insertionPoints)
         }
-        val insertionPoints = insertionPointStore.get(key)!!
 
         insertionPoints.add(InsertionPoint(insertionPoint))
         insertionPoints.sort()
@@ -32,7 +33,7 @@ class BurpExtender : IBurpExtender, IScannerCheck {
     }
 
     override fun consolidateDuplicateIssues(existingIssue: IScanIssue, newIssue: IScanIssue): Int {
-        // Remove exist issuing on consolidation - eventually leaving one issue that describes all insertion points
+        // Remove existing issue on consolidation - eventually leaving one issue that describes all insertion points
         return 1
     }
 
@@ -57,23 +58,23 @@ class ScanIssue(val httpMessages_: Array<IHttpRequestResponse>,
                 val insertionPoints: List<InsertionPoint>) : IScanIssue {
     companion object {
         val typeLookup = hashMapOf<Byte,String>(
-            0x00.toByte() to "INS_PARAM_URL",
-            0x01.toByte() to "INS_PARAM_BODY",
-            0x02.toByte() to "INS_PARAM_COOKIE",
-            0x03.toByte() to "INS_PARAM_XML",
-            0x04.toByte() to "INS_PARAM_XML_ATTR",
-            0x05.toByte() to "INS_PARAM_MULTIPART_ATTR",
-            0x06.toByte() to "INS_PARAM_JSON",
-            0x07.toByte() to "INS_PARAM_AMF",
-            0x20.toByte() to "INS_HEADER",
-            0x21.toByte() to "INS_URL_PATH_FOLDER",
-            0x22.toByte() to "INS_PARAM_NAME_URL",
-            0x23.toByte() to "INS_PARAM_NAME_BODY",
-            0x24.toByte() to "INS_ENTIRE_BODY",
-            0x25.toByte() to "INS_URL_PATH_FILENAME",
-            0x40.toByte() to "INS_USER_PROVIDED",
-            0x41.toByte() to "INS_EXTENSION_PROVIDED",
-            0x7f.toByte() to "INS_UNKNOWN"
+            0x00.toByte() to "PARAM_URL",
+            0x01.toByte() to "PARAM_BODY",
+            0x02.toByte() to "PARAM_COOKIE",
+            0x03.toByte() to "PARAM_XML",
+            0x04.toByte() to "PARAM_XML_ATTR",
+            0x05.toByte() to "PARAM_MULTIPART_ATTR",
+            0x06.toByte() to "PARAM_JSON",
+            0x07.toByte() to "PARAM_AMF",
+            0x20.toByte() to "HEADER",
+            0x21.toByte() to "URL_PATH_FOLDER",
+            0x22.toByte() to "PARAM_NAME_URL",
+            0x23.toByte() to "PARAM_NAME_BODY",
+            0x24.toByte() to "ENTIRE_BODY",
+            0x25.toByte() to "URL_PATH_FILENAME",
+            0x40.toByte() to "USER_PROVIDED",
+            0x41.toByte() to "EXTENSION_PROVIDED",
+            0x7f.toByte() to "UNKNOWN"
         )
     }
 
@@ -118,7 +119,7 @@ class ScanIssue(val httpMessages_: Array<IHttpRequestResponse>,
         rc.append("<p>This finding shows the insertion points that the Scanner has used. There is no security impact.</p>")
         rc.append("<table>")
         for(ip in insertionPoints) {
-            rc.append("<tr><td>${typeLookup.get(ip.insertionPoint.insertionPointType)}</td><td>${ip.insertionPoint.insertionPointName}</td></tr>")
+            rc.append("<tr><td>${typeLookup.get(ip.insertionPoint.insertionPointType)}</td><td>${escapeXss(ip.insertionPoint.insertionPointName)}</td></tr>")
         }
         rc.append("</table>")
         return rc.toString()
@@ -126,6 +127,10 @@ class ScanIssue(val httpMessages_: Array<IHttpRequestResponse>,
 
     override fun getSeverity(): String {
         return "Information"
+    }
+
+    fun escapeXss(input: String): String {
+        return input.replace("<", "&lt;").replace("&", "&amp;")
     }
 
 }
