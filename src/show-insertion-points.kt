@@ -15,8 +15,6 @@ class BurpExtender : IBurpExtender, IScannerCheck {
     }
 
     override fun doActiveScan(baseRequestResponse: IHttpRequestResponse, insertionPoint: IScannerInsertionPoint): MutableList<IScanIssue> {
-        baseRequestResponse.httpService
-
         // Fetch insertion points previously used for this base request
         val key = ByteBuffer.wrap(baseRequestResponse.request)
         if(!insertionPointStore.containsKey(key)) {
@@ -116,7 +114,6 @@ class ScanIssue(val httpMessages_: Array<IHttpRequestResponse>,
     }
 
     override fun getIssueDetail(): String {
-        // TODO: More Kotlin approach
         val rc = StringBuilder();
         rc.append("<p>This finding shows the insertion points that the Scanner has used. There is no security impact.</p>")
         rc.append("<table>")
