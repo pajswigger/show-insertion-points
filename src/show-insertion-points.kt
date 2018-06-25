@@ -4,30 +4,37 @@ import java.net.URL
 import java.nio.ByteBuffer
 
 
-class BurpExtender : IBurpExtender, IScannerCheck {
+class BurpExtender : IBurpExtender, IScannerCheck, IScannerInsertionPointProvider{
     lateinit var cb: IBurpExtenderCallbacks
-    val insertionPointStore = HashMap<ByteBuffer, ArrayList<InsertionPoint>>()
+    val insertionPointStore = HashMap<ByteBuffer, InsertionPointList>()
 
     override fun registerExtenderCallbacks(callbacks: IBurpExtenderCallbacks) {
         cb = callbacks
         callbacks.setExtensionName("Show Insertion Points")
         callbacks.registerScannerCheck(this)
+        callbacks.registerScannerInsertionPointProvider(this)
+    }
+
+    override fun getInsertionPoints(baseRequestResponse: IHttpRequestResponse): MutableList<IScannerInsertionPoint> {
+        val key = ByteBuffer.wrap(baseRequestResponse.request)
+        insertionPointStore.remove(key)
+        return mutableListOf<IScannerInsertionPoint>()
     }
 
     override fun doActiveScan(baseRequestResponse: IHttpRequestResponse, insertionPoint: IScannerInsertionPoint): MutableList<IScanIssue> {
         // Fetch insertion points previously used for this base request
         val key = ByteBuffer.wrap(baseRequestResponse.request)
-        var insertionPoints = insertionPointStore.get(key)
+        var insertionPoints = insertionPointStore[key]
         if(insertionPoints == null) {
-            insertionPoints = arrayListOf<InsertionPoint>()
-            insertionPointStore.put(key, insertionPoints)
+            insertionPoints = InsertionPointList()
+            insertionPointStore[key] = insertionPoints
         }
 
         insertionPoints.add(InsertionPoint(insertionPoint))
         insertionPoints.sort()
 
         // Create an issue with all offsets highlighted
-        val httpMessage = cb.applyMarkers(baseRequestResponse, insertionPoints.map { it.offsets }, null)
+        val httpMessage = cb.applyMarkers(baseRequestResponse, insertionPoints.getOffsets(), null)
         val requestInfo = cb.helpers.analyzeRequest(baseRequestResponse.httpService, baseRequestResponse.request)
         return arrayListOf(ScanIssue(arrayOf(httpMessage), baseRequestResponse.httpService, requestInfo.url, insertionPoints))
     }
@@ -52,12 +59,31 @@ class InsertionPoint(val insertionPoint: IScannerInsertionPoint) : Comparable<In
 }
 
 
+class InsertionPointList : ArrayList<InsertionPoint>() {
+    fun getOffsets(): List<IntArray> {
+        val offsetsList = arrayListOf<IntArray>()
+        for(insertionPoint in this) {
+            if(offsetsList.isEmpty()) {
+                offsetsList.add(insertionPoint.offsets)
+                continue
+            }
+            val prevOffsets = offsetsList[offsetsList.size - 1]
+            // TODO: check for fencepost errors
+            if(insertionPoint.offsets[0] > prevOffsets[1]) {
+                offsetsList.add(insertionPoint.offsets)
+            }
+        }
+        return offsetsList
+    }
+}
+
+
 class ScanIssue(val httpMessages_: Array<IHttpRequestResponse>,
                 val httpService_: IHttpService,
                 val url_: URL,
                 val insertionPoints: List<InsertionPoint>) : IScanIssue {
     companion object {
-        val typeLookup = hashMapOf<Byte,String>(
+        val typeLookup = mapOf<Byte,String>(
             0x00.toByte() to "PARAM_URL",
             0x01.toByte() to "PARAM_BODY",
             0x02.toByte() to "PARAM_COOKIE",
@@ -119,7 +145,7 @@ class ScanIssue(val httpMessages_: Array<IHttpRequestResponse>,
         rc.append("<p>This finding shows the insertion points that the Scanner has used. There is no security impact.</p>")
         rc.append("<table>")
         for(ip in insertionPoints) {
-            rc.append("<tr><td>${typeLookup.get(ip.insertionPoint.insertionPointType)}</td><td>${escapeXss(ip.insertionPoint.insertionPointName)}</td></tr>")
+            rc.append("<tr><td>${typeLookup.get(ip.insertionPoint.insertionPointType)}</td><td>${escapeXss(ip.insertionPoint.insertionPointName)}</td><td>${ip.offsets[0]}</td><td>${ip.offsets[1]}</td></tr>")
         }
         rc.append("</table>")
         return rc.toString()
